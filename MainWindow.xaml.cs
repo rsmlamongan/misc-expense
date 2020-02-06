@@ -15,6 +15,10 @@ namespace MiscExpenxe
     /// </summary>
     public partial class MainWindow : Window
     {
+        private const int SheetNumber = 3;
+        private const int ColumnId = 2;
+        private const int ColumnStartAdd = 7;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -36,29 +40,33 @@ namespace MiscExpenxe
         {
             try
             {
-                    buttonSource.IsEnabled = false;
-                    buttonReset.IsEnabled = false;
-                    buttonProcess.IsEnabled = false;
-                    progress.IsIndeterminate = true;
+                buttonSource.IsEnabled = false;
+                buttonReset.IsEnabled = false;
+                buttonProcess.IsEnabled = false;
+                progress.IsIndeterminate = true;
 
                 // copy file to avoid used file
                 var sourceFilename = GetTempFilename(textBoxSource.Text);
 
-                // load sheets
-                var workbook = await OpenWorkBookAsync(sourceFilename).ConfigureAwait(false);
-                var worksheet = workbook.Worksheet(3);
+                using (var workbook = await OpenWorkBookAsync(sourceFilename).ConfigureAwait(false))
+                {
+                    // load sheets
+                    var worksheet = workbook.Worksheet(SheetNumber);
 
-                var miscOnlyIdAndRow = CellsColumnToList(worksheet, 2);
-                var miscWithDetails = await GetMiscDetailsAsync(miscOnlyIdAndRow).ConfigureAwait(false);
+                    var miscOnlyIdAndRow = CellsColumnToList(worksheet, ColumnId);
+                    var miscWithDetails = await GetMiscDetailsAsync(miscOnlyIdAndRow).ConfigureAwait(false);
 
-                AddMiscDetailToExcel(ref worksheet, miscWithDetails);
+                    AddMiscDetailToExcel(ref worksheet, miscWithDetails);
+
+                    await Task.Run(() => workbook.Save()).ConfigureAwait(false);
+                }
 
                 Dispatcher.Invoke(() =>
                 {
                     var filename = SaveFileDialog(textBoxSource.Text);
                     if (!string.IsNullOrEmpty(filename))
                     {
-                        workbook.SaveAs(filename);
+                        File.Move(sourceFilename, filename);
                         System.Diagnostics.Process.Start(filename);
                     }
                 });
@@ -155,14 +163,15 @@ namespace MiscExpenxe
 
                             if (lain != null && biaya > 0 && miscs.FirstOrDefault(x => x.Id == id) is Misc misc)
                             {
-                                if (misc.Expenses.ContainsKey(lain.Trim()))
+                                var lainReplaced = GetStringReplacer(lain);
+                                if (misc.Expenses.ContainsKey(lainReplaced))
                                 {
-                                    var b = misc.Expenses[lain.Trim()];
-                                    misc.Expenses[lain.Trim()] = b + biaya;
+                                    var b = misc.Expenses[lainReplaced];
+                                    misc.Expenses[lainReplaced] = b + biaya;
                                 }
                                 else
                                 {
-                                    misc.Expenses.Add(lain.Trim(), biaya);
+                                    misc.Expenses.Add(lainReplaced, biaya);
                                 }
                             }
                         }
@@ -173,11 +182,25 @@ namespace MiscExpenxe
             }
         }
 
+        private static string GetStringReplacer(string initial)
+        {
+            var replaces = new Dictionary<string, string>();
+            foreach (var replace in MiscExpense.Properties.Settings.Default.Replace)
+            {
+                var split = replace.Split(';');
+                if (split.Length >= 2 && split[0].ToUpperInvariant() == initial.Trim().ToUpperInvariant())
+                {
+                    return split[1];
+                }
+            }
+            return initial;
+        }
+
         private void AddMiscDetailToExcel(ref IXLWorksheet worksheet, IEnumerable<Misc> miscs)
         {
             foreach (var misc in miscs)
             {
-                var col = 7;
+                var col = ColumnStartAdd;
                 foreach (var expense in misc.ExpensesOrdered)
                 {
                     worksheet.Cell(misc.Row, col++).Value = expense.Key;
