@@ -1,4 +1,5 @@
 ﻿using ClosedXML.Excel;
+using MiscExpense;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
@@ -15,7 +16,7 @@ namespace MiscExpenxe
     /// </summary>
     public partial class MainWindow : Window
     {
-        private const int SheetNumber = 3;
+        private const int SheetNumber = 8;
         private const int ColumnId = 2;
         private const int ColumnStartAdd = 7;
 
@@ -36,7 +37,94 @@ namespace MiscExpenxe
             buttonProcess.IsEnabled = false;
         }
 
-        private async void ButtonProcess_Click(object sender, RoutedEventArgs e)
+        private async void ButtonProcess_Click(object sender, RoutedEventArgs re)
+        {
+            var query = "";
+            try
+            {
+                buttonSource.IsEnabled = false;
+                buttonReset.IsEnabled = false;
+                buttonProcess.IsEnabled = false;
+                progress.IsIndeterminate = true;
+
+                // copy file to avoid used file
+                var folder = Path.GetDirectoryName(textBoxSource.Text);
+                var files = Directory.GetFiles(folder);
+
+                foreach (var sourceFilename in files)
+                {
+                    var list = new List<Class1>();
+                    using (var workbook = await OpenWorkBookAsync(sourceFilename).ConfigureAwait(false))
+                    {
+                        // load sheets
+                        var worksheet = workbook.Worksheet("L");
+                        var e = 0;
+                        var row = 1;
+                        while (e <= 3)
+                        {
+                            row++;
+                            var miscId = worksheet?.Cell(row, 2)?.Value?.ToString();
+
+                            if (int.TryParse(miscId, out int id))
+                            {
+                                // reset error row
+                                e = 0;
+
+                                for (int i = 0; i < 3; i++)
+                                {
+                                    var unit = worksheet?.Cell(row, 7 + i * 2)?.Value?.ToString();
+                                    var nilai = worksheet?.Cell(row, 8 + i * 2)?.Value?.ToString();
+                                    if (double.TryParse(nilai, out double d))
+                                    {
+                                        if (d > 0)
+                                        {
+                                            list.Add(new Class1 { Id = id, Kategori = unit, Biaya = d });
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // increment error row
+                                e++;
+                            }
+                        }
+                    }
+
+                    foreach (var item in list)
+                    {
+                        using (var connection = new SqlConnection("Server = 192.168.3.7; Database = Temp; User ID = ws; Password = online; Trusted_Connection = no; Connection Timeout = 5"))
+                        {
+                            query = $"INSERT INTO Table_1 (IdLayanan, Biaya, Kategori) VALUES ({item.Id}, @biaya, '{item.Kategori}')";
+                            using (var command = new SqlCommand(query, connection))
+                            {
+                                command.Parameters.AddWithValue("@biaya", item.Biaya);
+                                await connection.OpenAsync().ConfigureAwait(false);
+                                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                            }
+                        }
+                    }
+                }
+
+                MessageBox.Show("Selesai", "Misc Expense");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Misc Expense", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    buttonSource.IsEnabled = true;
+                    buttonReset.IsEnabled = true;
+                    buttonProcess.IsEnabled = true;
+                    progress.IsIndeterminate = false;
+                });
+            }
+        }
+
+        private async void ButtonProcess_Click_Bak(object sender, RoutedEventArgs e)
         {
             try
             {
